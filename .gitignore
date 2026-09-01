@@ -1,0 +1,23 @@
+# Model weights (not in git; see Model/README.md)
+**/model.pth
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# User-provided eval data (see Data/README.md)
+Data/ConvertedTUSZEval/**/*
+!Data/ConvertedTUSZEval/.gitkeep
+
+# New experiment outputs (demo runs under Results/ are tracked)
+Results/**/*
+!Results/README.md
+!Results/Baseline/**
+
+# IDE / OS
+.idea/
+.vscode/
+Thumbs.db

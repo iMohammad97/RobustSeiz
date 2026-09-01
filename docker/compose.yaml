@@ -1,0 +1,15 @@
+services:
+  main:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        ACTIVE_MODEL: ${ACTIVE_MODEL:-SeizureTransformer}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    volumes:
+      - ../Data/ConvertedTUSZEval:/data:ro
+      - ../Results:/output:rw
