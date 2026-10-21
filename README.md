@@ -63,7 +63,7 @@ Bundled under `Results/Baseline/`:
 - Python 3.10+
 - NVIDIA GPU + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
 - Docker
-- TUSZ eval split in BIDS layout (`Data/README.md`)
+- Eval data in BIDS layout: TUSZ eval, Siena or CHB-MIT (`Data/README.md`)
 
 ## Docs
 
