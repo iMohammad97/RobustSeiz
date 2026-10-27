@@ -34,6 +34,9 @@ class ExperimentConfig:
     name: str = ""
     params: dict[str, Any] = field(default_factory=dict)
     mcd: dict[str, Any] | None = None
+    model: str = "SeizureTransformer"
+    subset: int | None = None  # research subset (first N subjects) without MCD
+    dataset: str = "TUSZ"
 
     def validate(self) -> None:
         if self.category not in CATEGORIES:
@@ -63,7 +66,10 @@ class ExperimentConfig:
         return "_" + "_".join(parts)
 
     def default_name(self) -> str:
-        return self._shift_base_name() + self._mcd_name_suffix()
+        suffix = self._mcd_name_suffix()
+        if not suffix and self.subset:
+            suffix = f"_research{int(self.subset)}"
+        return self._shift_base_name() + suffix
 
     def _shift_base_name(self) -> str:
         p = self.params
@@ -139,16 +145,17 @@ class ExperimentConfig:
                 return f"ST_fgsm_{short}_eps{eps:.2f}_trs{trs:.1f}".replace(".0_", "_")
             if self.shift == "pgd":
                 return (
-                    f"ST_pgd_{short}_eps{eps:.2f}_alp{p['alpha']:.2f}"
+                    f"ST_pgd_{short}_eps{eps:.2f}_alp{p['alpha']:g}"
                     f"_stp{int(p['steps'])}_trs{trs:.1f}"
                 ).replace(".0_", "_")
         return f"{self.category}_{self.shift}"
 
     def output_subdir(self) -> str:
         self.validate()
+        root = Path("Results") / self.model / self.dataset
         if self.category == "baseline":
-            return str(Path("Results") / "Baseline" / self.name)
-        return str(Path("Results") / self.category.capitalize() / self.name)
+            return str(root / "Baseline" / self.name)
+        return str(root / self.category.capitalize() / self.name)
 
     def _mcd_env(self) -> dict[str, str]:
         if not self.mcd:
@@ -221,6 +228,8 @@ class ExperimentConfig:
                 env["BANDPASS_ORDER"] = str(p.get("bandpass_order", 3))
         elif self.category == "noise":
             env["PERTURB"] = self.shift
+            if p.get("rng_seed") is not None:
+                env["RNG_SEED"] = str(p["rng_seed"])
             if self.shift == "awgn":
                 env["SNR_DB"] = str(p["snr_db"])
             elif self.shift == "mains":
@@ -246,20 +255,22 @@ class ExperimentConfig:
             env["ATTACK"] = self.shift
             env["ATTACK_MODE"] = p.get("attack_mode", "increase")
             env["EPS"] = str(p["eps"])
-            env["THRESH"] = str(p.get("thresh", 0.5))
-            env["OPEN_K"] = str(p.get("open_k", 5))
-            env["CLOSE_K"] = str(p.get("close_k", 5))
-            env["MIN_EVENT_SEC"] = str(p.get("min_event_sec", 2.0))
+            # Flip-target threshold only; eventization keeps the model's own threshold.
+            env["ATTACK_THRESH"] = str(p.get("thresh", 0.5))
             if self.shift == "pgd":
                 env["ALPHA"] = str(p.get("alpha", 0.01))
                 env["STEPS"] = str(p.get("steps", 10))
         env.update(self._mcd_env())
+        if self.subset and not self.mcd:
+            env["SUBSET"] = str(int(self.subset))
         return env
 
     def to_flat_record(self, data_dir: str, output_dir: str, metrics: dict[str, float]) -> dict[str, Any]:
         self.validate()
         row: dict[str, Any] = {
             "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "model": self.model,
+            "dataset": self.dataset,
             "experiment_name": self.name,
             "category": self.category,
             "shift": self.shift,

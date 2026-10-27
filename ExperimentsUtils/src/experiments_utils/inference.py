@@ -9,7 +9,14 @@ from epilepsy2bids.eeg import Eeg
 
 from experiments_utils.apply import apply_shifts_from_env
 from experiments_utils.mcd import agreement_output_path
-from experiments_utils.models.registry import get_active_model_name, get_mcd_fn, get_model_fn, model_supports_mcd
+from experiments_utils.models.registry import (
+    get_active_model_name,
+    get_mcd_fn,
+    get_model_fn,
+    get_model_spec,
+    model_supports_mcd,
+)
+from experiments_utils.montage import convert_montage
 
 
 def _mcd_enabled() -> bool:
@@ -17,14 +24,21 @@ def _mcd_enabled() -> bool:
 
 
 def run_inference(edf_file: str, out_file: str, project_root: Path | None = None) -> None:
-    """Benchmark entry point: apply shifts, run active model, write BIDS TSV."""
-    eeg = Eeg.loadEdf(edfFile=edf_file)
-    assert eeg.montage is Eeg.Montage.UNIPOLAR, "Error: Only unipolar montages are supported."
+    """Benchmark entry point: apply shifts, run active model, write BIDS TSV.
 
-    labels = getattr(eeg, "channels", None)
-    print("eeg.channels:", labels)
+    Shifts act on the recording in its own montage (as acquired); the result is then
+    converted to the model's input montage (unipolar -> bipolar is exact).
+    """
+    eeg = Eeg.loadEdfAutoDetectMontage(edfFile=edf_file)
+    labels = list(getattr(eeg, "channels", []))
+    print(f"eeg.montage={eeg.montage.value} channels={labels}")
 
     data = apply_shifts_from_env(eeg.data, eeg.fs, labels, raw_data=eeg.data)
+
+    target = get_model_spec(project_root).montage
+    data, labels = convert_montage(data, labels, eeg.montage.value, target)
+    eeg.channels = labels
+    eeg.montage = Eeg.Montage(target)
 
     detect = get_model_fn(project_root)
     mask = detect(eeg, data)

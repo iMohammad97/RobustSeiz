@@ -1,25 +1,21 @@
 # Results
 
-## Bundled demo runs
+Experiment outputs are written here and are gitignored.
 
-These folders show expected output from the bundled sample model ([SeizureTransformer](https://arxiv.org/abs/2504.00336)):
+## Layout
 
-| Folder | Description |
-|--------|-------------|
-| `Baseline/Baseline/` | Full eval, no shift |
-| `Baseline/Baseline_MCD_s5_research10/` | MCD uncertainty (10 subjects, 5 dropout samples) |
+```
+Results/<Model>/<Dataset>/<Category>/<Experiment>/
+├── sub-*/ses-*/eeg/*_events.tsv    # hypothesis events, mirroring the eval tree
+├── sub-*/ses-*/eeg/*_agreement.npz # per-sample MCD agreement (only with --enable-mcd)
+├── results.csv / results.txt       # SzCORE sample- and event-based scores
+└── onset.csv / onset.txt           # lead/lag onset timing among event true positives
+```
 
-Each contains mirrored `*_events.tsv` predictions, `results.csv`, `onset.csv`, and optional `*_agreement.npz`.
+Example: `python run_experiment.py --model EEGNet --dataset Siena --category noise --shift awgn --snr-db 20 --runner local` writes `Results/EEGNet/Siena/Noise/AWGN_20/`.
 
 ## Registry
 
-`experiments_results.csv` at repo root logs **203 runs** across all shift types (metrics only). Re-run commands from `COMMANDS.md` to regenerate prediction folders for other shifts.
+`experiments_results.csv` at the repo root is the machine-readable robustness report: one row per run with its parameters (`params_json`) and metrics. It holds the 444 benchmark runs summarised in `RESULTS.md` (metrics only; prediction folders are not bundled). Re-create any row with the matching command from `scripts/plan_runs.py`.
 
-## New experiments
-
-```bash
-py run_experiment.py --category noise --shift awgn --snr-db 20
-# → Results/Noise/AWGN_20/
-```
-
-Outputs are gitignored except the demo folders above.
+`scripts/summarize_results.py` reads the registry and writes summary tables to `Results/summary/`.

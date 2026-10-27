@@ -1,4 +1,4 @@
-﻿# ExperimentsUtils
+# ExperimentsUtils
 
 RobustSeiz core: shift definitions, experiment configuration, model registry, and inference pipeline.
 
@@ -15,15 +15,20 @@ Models under `Model/` contain **only** detection code. Everything here is shared
 | `apply.py` | Apply shifts from env vars |
 | `config.py` | `ExperimentConfig`: naming, env mapping, CSV rows |
 | `inference.py` | **RobustSeiz entry point** (shifts → model → TSV) |
-| `runner.py` | Batch Docker inference over eval EDFs |
-| `models/registry.py` | Active model selection + optional MCD registration |
-| `models/seizure_transformer.py` | Sample model adapter (SeizureTransformer) |
+| `runner.py` | Batch inference over eval EDFs: Docker (one container per EDF) or local (in-process, resumable) |
+| `datasets.py` | Known eval datasets (`--dataset`): folder and native montage |
+| `montage.py` | Converts shifted recordings to the model's input montage (unipolar or bipolar double banana) |
+| `models/registry.py` | Model specs (adapter, montage, MCD support) and active model selection |
+| `models/seizure_transformer.py` | SeizureTransformer adapter |
+| `models/eegnet.py` | EEGNet adapter |
+| `models/eegwavenet.py` | EEGWaveNet adapter (5-fold ensemble) |
+| `models/eventnet.py` | EventNet adapter |
 | `mcd.py` | Model-agnostic MCD helpers (`enable_dropout_only`, agreement index) |
 
 ## Inference flow
 
 ```
-EDF → apply_shifts_from_env() → registry.get_model_fn()(eeg, data) → BIDS TSV
+EDF → apply_shifts_from_env() → to model montage → registry.get_model_fn()(eeg, data) → BIDS TSV
                                → [optional] registry.get_mcd_fn()(eeg, data) → agreement NPZ
 ```
 

@@ -36,9 +36,13 @@ def _sorted_subjects(edfs: list[Path], data_root: Path) -> list[str]:
 
 
 def select_edf_subset(edfs: list[Path], data_root: Path, env: dict[str, str]) -> list[Path]:
-    """Limit inference to an MCD subset (random EDFs or first-N research subjects)."""
+    """Limit inference to an MCD subset (random EDFs or first-N research subjects),
+    or to a research subset (first N subjects) for runs without MCD."""
     if not _mcd_enabled(env):
-        return edfs
+        research_n = str(env.get("SUBSET", "")).strip()
+        if not research_n:
+            return edfs
+        env = {**env, "MCD_SUBSET": research_n, "MCD_SUBSET_MODE": MCD_SUBSET_MODE_RESEARCH}
 
     subset_s = str(env.get("MCD_SUBSET", "")).strip()
     if not subset_s:
@@ -77,6 +81,99 @@ def select_edf_subset(edfs: list[Path], data_root: Path, env: dict[str, str]) ->
     chosen = sorted(rng.sample(edfs, subset_n))
     print(f"MCD random-subset: processing {len(chosen)} / {len(edfs)} EDFs (seed={seed})")
     return chosen
+
+
+def _outputs_done(output_dir: Path, output_rel: str, env: dict[str, str]) -> bool:
+    events = output_dir / output_rel
+    if not events.exists():
+        return False
+    if _mcd_enabled(env):
+        from experiments_utils.mcd import agreement_output_path
+
+        return agreement_output_path(events).exists()
+    return True
+
+
+def write_run_status(**fields) -> None:
+    """Merge fields into the JSON status file named by RUN_STATUS_FILE (no-op when unset)."""
+    import json
+    import os
+    import time
+
+    path = os.getenv("RUN_STATUS_FILE")
+    if not path:
+        return
+    status_path = Path(path)
+    try:
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        status = {}
+    status.update(fields, updated=time.time())
+    tmp = status_path.with_suffix(".tmp")
+    # Best effort: on Windows the replace fails while another process (monitor, antivirus)
+    # has the file open. Progress reporting must never crash a run, so retry briefly, then skip.
+    for _ in range(10):
+        try:
+            tmp.write_text(json.dumps(status), encoding="utf-8")
+            os.replace(tmp, status_path)  # atomic, so monitors never read a half-written file
+            return
+        except OSError:
+            time.sleep(0.2)
+
+
+def _edf_seconds(edf: Path) -> float:
+    import pyedflib
+
+    with pyedflib.EdfReader(str(edf)) as reader:
+        return float(reader.getFileDuration())
+
+
+def run_local_inference(
+    data_dir: Path,
+    output_dir: Path,
+    env: dict[str, str],
+    project_root: Path,
+    resume: bool = False,
+) -> None:
+    """In-process inference (no Docker): the model is loaded once and reused for every EDF."""
+    import os
+    import time
+
+    from experiments_utils.inference import run_inference
+
+    data_dir = data_dir.resolve()
+    output_dir = output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.update(env)
+    if os.getenv("TORCH_THREADS"):
+        import torch
+
+        torch.set_num_threads(int(os.environ["TORCH_THREADS"]))
+
+    edfs = sorted(data_dir.glob("**/*.edf"))
+    if not edfs:
+        raise FileNotFoundError(f"No EDF files found under {data_dir}")
+    edfs = select_edf_subset(edfs, data_dir, env)
+    seconds = [_edf_seconds(e) for e in edfs]
+    done_sec = 0.0
+    write_run_status(
+        state="inference", files_total=len(edfs), files_done=0,
+        eeg_sec_total=sum(seconds), eeg_sec_done=0.0, inference_started=time.time(),
+    )
+
+    start = time.time()
+    for i, (edf, sec) in enumerate(zip(edfs, seconds), 1):
+        output_rel = _edf_output_path(edf, data_dir)
+        if not (resume and _outputs_done(output_dir, output_rel, env)):
+            write_run_status(current=edf.relative_to(data_dir).as_posix())
+            t0 = time.time()
+            run_inference(str(edf), str(output_dir / output_rel), project_root=project_root)
+            print(
+                f"[{i}/{len(edfs)}] {edf.relative_to(data_dir).as_posix()} "
+                f"{time.time() - t0:.1f}s (elapsed {time.time() - start:.0f}s)"
+            )
+        done_sec += sec
+        write_run_status(files_done=i, eeg_sec_done=done_sec)
 
 
 def run_docker_inference(

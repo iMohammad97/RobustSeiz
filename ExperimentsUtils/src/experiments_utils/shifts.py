@@ -57,7 +57,7 @@ def apply_notch_filter(x, fs, freqs, q=30.0):
     return y.astype(x.dtype, copy=False)
 
 
-def apply_notch_shift(x, fs, profile="off", mode="only", mains_hz=60.0, amp_ratio=0.03, q=30.0):
+def apply_notch_shift(x, fs, profile="off", mode="only", mains_hz=60.0, amp_ratio=0.03, q=30.0, rng=None):
     """
     Benchmark notch preprocessing on raw EEG.
 
@@ -67,7 +67,7 @@ def apply_notch_shift(x, fs, profile="off", mode="only", mains_hz=60.0, amp_rati
     freqs = parse_notch_profile(profile)
     mode = mode.lower()
     if mode == "mismatch":
-        x = add_mains(x, fs=fs, amp_ratio=amp_ratio, freq=mains_hz)
+        x = add_mains(x, fs=fs, amp_ratio=amp_ratio, freq=mains_hz, rng=rng)
         if freqs:
             x = apply_notch_filter(x, fs=fs, freqs=freqs, q=q)
     elif mode == "only":
@@ -104,12 +104,12 @@ def apply_bandpass_shift(x, fs, profile="0.5_40", order=3):
     return apply_bandpass_filter(x, fs=fs, lowcut=lowcut, highcut=highcut, order=order)
 
 
-def add_mains(x, fs, amp_ratio=0.03, freq=60.0, phases=None):
+def add_mains(x, fs, amp_ratio=0.03, freq=60.0, phases=None, rng=None):
     if amp_ratio <= 0:
         return x
     t = np.arange(x.shape[1]) / fs
     if phases is None:
-        phases = 2 * np.pi * np.random.rand(x.shape[0])
+        phases = 2 * np.pi * np.random.default_rng(rng).random(x.shape[0])
     s_rms = _rms(x, axis=1)
     hum = np.array(
         [amp_ratio * s_rms[i] * np.sin(2 * np.pi * freq * t + phases[i]) for i in range(x.shape[0])]
@@ -179,16 +179,32 @@ def fs_mismatch_roundtrip(x, fs, target_fs):
     return resample(y, t, axis=1)
 
 
+# Old (T3/T4/T5/T6) and new (T7/T8/P7/P8) 10-20 names for the same electrodes.
+_ELECTRODE_SYNONYMS = {"t7": "t3", "t8": "t4", "p7": "t5", "p8": "t6", "01": "o1"}
+_REFERENCE_TOKENS = {"avg", "ref", "cs2", "le", "ar"}
+
+
+def _canonical_electrode(name):
+    token = str(name).strip().lower().removeprefix("eeg ").strip()
+    return _ELECTRODE_SYNONYMS.get(token, token)
+
+
+def channel_electrodes(label):
+    """Electrodes in a channel label: ``FP1-Avg`` -> {fp1}; bipolar ``T7-P7`` -> {t3, t5}."""
+    parts = str(label).strip().lower().removeprefix("eeg ").split("-")
+    return {_canonical_electrode(p) for p in parts if p.strip() and p.strip() not in _REFERENCE_TOKENS}
+
+
 def drop_by_names(x, labels, names):
+    """Zero every channel that involves one of ``names`` (unipolar or bipolar labels)."""
     if not names:
         return x
     x = x.copy()
-    name_set = {n.strip().lower() for n in names if n.strip()}
+    name_set = {_canonical_electrode(n) for n in names if n.strip()}
     if labels is not None:
-        lab2idx = {str(l).strip().lower(): i for i, l in enumerate(labels)}
-        for n in list(name_set):
-            if n in lab2idx:
-                x[lab2idx[n], :] = 0.0
+        for i, label in enumerate(labels):
+            if channel_electrodes(label) & name_set:
+                x[i, :] = 0.0
     else:
         for n in list(name_set):
             if n.startswith("ch:"):

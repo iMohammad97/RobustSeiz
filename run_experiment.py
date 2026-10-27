@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -20,10 +21,23 @@ from experiments_utils.runner import run_docker_inference  # noqa: E402
 
 
 def _add_shared_args(parser: argparse.ArgumentParser) -> None:
+    from experiments_utils.datasets import DATASETS
+
+    parser.add_argument(
+        "--dataset",
+        default="TUSZ",
+        choices=list(DATASETS),
+        help="Evaluation dataset (sets the default --data-dir and is logged in the registry).",
+    )
+    parser.add_argument(
+        "--model",
+        default="",
+        help="Model to run (default: ACTIVE_MODEL env var, else Model/active_model).",
+    )
     parser.add_argument(
         "--data-dir",
-        default="Data/ConvertedTUSZEval",
-        help="Eval dataset root (BIDS EDFs + reference annotations).",
+        default="",
+        help="Eval dataset root (BIDS EDFs + reference annotations; default: the dataset's folder).",
     )
     parser.add_argument(
         "--output-dir",
@@ -39,6 +53,17 @@ def _add_shared_args(parser: argparse.ArgumentParser) -> None:
         "--results-registry",
         default="experiments_results.csv",
         help="CSV file at repo root logging all experiment metrics and parameters.",
+    )
+    parser.add_argument(
+        "--runner",
+        default="docker",
+        choices=["docker", "local"],
+        help="docker: one container per EDF (default); local: in-process in the current Python env.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Local runner: skip recordings whose outputs already exist.",
     )
     parser.add_argument("--skip-inference", action="store_true")
     parser.add_argument("--skip-evaluate", action="store_true")
@@ -80,6 +105,12 @@ def _add_shared_args(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=42,
         help="RNG seed for --mcd-subset-mode random (default: 42).",
+    )
+    parser.add_argument(
+        "--research-subset",
+        type=int,
+        default=None,
+        help="Without MCD: run and score only the first N subjects (research-subset mode).",
     )
     parser.add_argument(
         "--onset-subset",
@@ -124,6 +155,8 @@ def _eval_subset_from_mcd(cfg: ExperimentConfig):
     """Match SzCORE (+ default onset) to MCD inference subset when present."""
     from evaluation.subset import EvalSubsetConfig
 
+    if cfg.subset and not cfg.mcd:
+        return EvalSubsetConfig(subset=int(cfg.subset), subset_mode="research")
     if not cfg.mcd or cfg.mcd.get("subset") is None:
         return EvalSubsetConfig()
     return EvalSubsetConfig(
@@ -242,6 +275,8 @@ def _build_config(args: argparse.Namespace) -> ExperimentConfig:
     elif category == "noise":
         if shift == "none":
             raise ValueError("noise experiments require --shift (awgn, mains, impulse, notch)")
+        if shift in ("awgn", "mains", "notch") and args.rng_seed is not None:
+            params["rng_seed"] = args.rng_seed
         if shift == "awgn":
             params["snr_db"] = args.snr_db
         elif shift == "mains":
@@ -439,10 +474,24 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     cfg = _apply_onset_subset_params(_apply_mcd_config(_build_config(args), args), args)
+    if args.research_subset is not None:
+        if args.enable_mcd:
+            raise SystemExit("Use --mcd-subset with --enable-mcd; --research-subset is for runs without MCD.")
+        cfg.subset = args.research_subset
+        cfg.params = {**cfg.params, "eval_subset": args.research_subset, "eval_subset_mode": "research"}
     if not args.name:
         cfg.name = cfg.default_name()
 
-    data_dir = (PROJECT_ROOT / args.data_dir).resolve()
+    from experiments_utils.datasets import get_dataset
+    from experiments_utils.models.registry import get_active_model_name
+
+    if args.model:
+        os.environ["ACTIVE_MODEL"] = args.model
+    cfg.model = get_active_model_name(PROJECT_ROOT)
+    dataset = get_dataset(args.dataset)
+    cfg.dataset = dataset.name
+
+    data_dir = (PROJECT_ROOT / (args.data_dir or dataset.data_dir)).resolve()
     if args.output_dir:
         output_dir = Path(args.output_dir).resolve()
     else:
@@ -453,6 +502,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(f"Experiment: {cfg.name}")
+    print(f"  model={cfg.model} dataset={cfg.dataset}")
     print(f"  category={cfg.category} shift={cfg.shift}")
     if cfg.mcd:
         subset_info = ""
@@ -494,17 +544,27 @@ def main(argv: list[str] | None = None) -> int:
             )
 
     if not args.skip_inference:
-        run_docker_inference(
-            data_dir=data_dir,
-            output_dir=output_dir,
-            env=cfg.to_env(),
-            project_root=PROJECT_ROOT,
-        )
+        env = {**cfg.to_env(), "ACTIVE_MODEL": cfg.model}
+        if args.runner == "local":
+            from experiments_utils.runner import run_local_inference
+
+            run_local_inference(data_dir, output_dir, env, PROJECT_ROOT, resume=args.resume)
+        else:
+            run_docker_inference(
+                data_dir=data_dir,
+                output_dir=output_dir,
+                env=env,
+                project_root=PROJECT_ROOT,
+            )
+
+    from experiments_utils.runner import write_run_status
 
     metrics: dict[str, float] = {}
     if not args.skip_evaluate:
         from evaluation.evaluate import evaluate
         from evaluation.registry import append_experiment_result
+
+        write_run_status(state="scoring")
         from experiments_utils.models.registry import model_supports_mcd
 
         metrics = evaluate(
@@ -513,6 +573,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=str(output_dir),
             eval_subset=eval_subset,
             onset_subset=_onset_subset_config(args),
+            dataset=cfg.dataset,
         )
         if cfg.mcd and model_supports_mcd(PROJECT_ROOT):
             from evaluation.uncertainty import evaluate_uncertainty
@@ -528,6 +589,12 @@ def main(argv: list[str] | None = None) -> int:
         record = cfg.to_flat_record(str(data_dir), str(output_dir), metrics)
         registry_path = (PROJECT_ROOT / args.results_registry).resolve()
         append_experiment_result(registry_path, record)
+        write_run_status(
+            state="done",
+            event_f1=metrics.get("event_f1"),
+            event_sensitivity=metrics.get("event_sensitivity"),
+            event_fp_per_day=metrics.get("event_fp_per_day"),
+        )
 
     print("Done.")
     return 0

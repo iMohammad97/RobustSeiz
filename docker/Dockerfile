@@ -23,12 +23,14 @@ ENV ACTIVE_MODEL=${ACTIVE_MODEL}
 RUN python3 -m pip install --no-cache-dir pyedflib
 
 COPY ExperimentsUtils /app/ExperimentsUtils
-COPY Model/${ACTIVE_MODEL}/wu_2025 /app/Model/${ACTIVE_MODEL}/wu_2025
+COPY Model/${ACTIVE_MODEL} /app/Model/${ACTIVE_MODEL}
 COPY Model/active_model /app/Model/active_model
 
-RUN python3 -m pip install --no-cache-dir \
-    /app/ExperimentsUtils \
-    /app/Model/${ACTIVE_MODEL}/wu_2025
+# Install the shared pipeline plus every package (folder with a pyproject.toml) of the active model.
+RUN python3 -m pip install --no-cache-dir /app/ExperimentsUtils \
+    && for p in /app/Model/${ACTIVE_MODEL}/*/pyproject.toml; do \
+        python3 -m pip install --no-cache-dir "$(dirname "$p")" || exit 1; \
+    done
 
 USER appuser
 

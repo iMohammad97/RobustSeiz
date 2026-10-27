@@ -12,6 +12,7 @@ def forward_with_adversarial(model, dataloader, device):
     attack = os.getenv("ATTACK", "").lower()
     eps = float(os.getenv("EPS", "0") or 0)
     attack_mode = os.getenv("ATTACK_MODE", "flip").lower()
+    thresh = float(os.getenv("ATTACK_THRESH", "0.5"))
 
     total_output = None
     model.eval()
@@ -19,12 +20,12 @@ def forward_with_adversarial(model, dataloader, device):
         data = data.float().to(device)
 
         if attack == "fgsm" and eps > 0:
-            batch = fgsm_batch(model, data, mode=attack_mode, eps=eps)
+            batch = fgsm_batch(model, data, mode=attack_mode, eps=eps, thresh=thresh)
         elif attack == "pgd" and eps > 0:
             alpha = float(os.getenv("ALPHA", "0.005"))
             steps = int(os.getenv("STEPS", "5"))
             batch = pgd_batch(
-                model, data, mode=attack_mode, eps=eps, alpha=alpha, steps=steps
+                model, data, mode=attack_mode, eps=eps, alpha=alpha, steps=steps, thresh=thresh
             )
         else:
             batch = data

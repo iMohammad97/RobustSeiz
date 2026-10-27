@@ -44,10 +44,12 @@ def evaluate(
     output_dir: str | None = None,
     onset_subset: EvalSubsetConfig | None = None,
     eval_subset: EvalSubsetConfig | None = None,
+    dataset: str = "TUSZ",
 ) -> dict[str, float]:
     """Score SzCORE + lead/lag over reference annotations.
 
     Args:
+        dataset: Dataset name written to the per-file ``results.csv``.
         eval_subset: When active, SzCORE aggregates over this subset only.
             Full eval when inactive / None. MCD subset runs should pass the
             same scope used for inference.
@@ -122,7 +124,7 @@ def evaluate(
         event_score = scoring.EventScoring(ref_ann, hyp_ann)
 
         subject = ref_tsv.name.split("_")[0]
-        results["dataset"].append("tuh")
+        results["dataset"].append(dataset)
         results["subject"].append(subject)
         results["file"].append(ref_tsv.name)
         results["duration"].append(len(ref_ann.mask) / ref_ann.fs)

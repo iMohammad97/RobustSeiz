@@ -89,12 +89,12 @@ def apply_shifts_from_env(data, fs, labels=None, raw_data=None):
 
     if mode == "awgn":
         snr = float(os.environ.get("SNR_DB", "20"))
-        data = shifts.add_awgn_snr(data, snr_db=snr)
+        data = shifts.add_awgn_snr(data, snr_db=snr, rng=seed)
         print(f"Added AWGN with SNR={snr}dB")
     elif mode == "mains":
         amp = float(os.environ.get("AMP_RATIO", "0.03"))
         data = shifts.add_mains(
-            data, fs=fs, amp_ratio=amp, freq=float(os.environ.get("MAINS_HZ", "60"))
+            data, fs=fs, amp_ratio=amp, freq=float(os.environ.get("MAINS_HZ", "60")), rng=seed
         )
     elif mode == "impulse":
         density = float(os.getenv("IMP_DENSITY", "0.001"))
@@ -129,6 +129,7 @@ def apply_shifts_from_env(data, fs, labels=None, raw_data=None):
             mains_hz=mains_hz,
             amp_ratio=amp,
             q=q,
+            rng=seed,
         )
         print(
             f"[PERTURB] notch profile={profile} mode={notch_mode} "

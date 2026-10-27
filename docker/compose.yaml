@@ -10,6 +10,4 @@ services:
         reservations:
           devices:
             - capabilities: [gpu]
-    volumes:
-      - ../Data/ConvertedTUSZEval:/data:ro
-      - ../Results:/output:rw
+    # /data and /output are mounted per run by run_experiment.py (or with -v for manual runs).

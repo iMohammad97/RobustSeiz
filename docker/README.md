@@ -1,4 +1,4 @@
-﻿# Docker
+# Docker
 
 GPU container for **RobustSeiz** inference: **ExperimentsUtils + active Model**.
 
@@ -54,12 +54,14 @@ docker compose -f docker/compose.yaml run --rm \
 ## Requirements
 
 - NVIDIA GPU + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
-- Sample-model weights downloaded and in place before build (see `Model/README.md`)
+- Model weights in place before build (SeizureTransformer: see `Model/README.md`; EEGWaveNet: fetch it first, see `Model/EEGWaveNet/README.md`)
 
 ## What gets installed
 
 1. `ExperimentsUtils`: shifts + inference + model registry
-2. `Model/<active_model>/wu_2025` (or your package): detector only
+2. Every package under `Model/<active_model>/` (each folder with a `pyproject.toml`): detector only
+
+The image has no data or results baked in: `run_experiment.py` mounts the chosen dataset at `/data` and the run's output folder at `/output` for every recording. Without a GPU, use `--runner local` instead.
 
 
 Band-pass (0.5–40 Hz on raw EEG):

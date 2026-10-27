@@ -1,5 +1,9 @@
-# Model weights (not in git; see Model/README.md)
+# Model weights that must be downloaded (see Model/README.md)
 **/model.pth
+!Model/EventNet/eventnet/src/eventnet/model.pth
+
+# EEGWaveNet package is fetched from upstream, not redistributed (see Model/EEGWaveNet/README.md)
+Model/EEGWaveNet/thuwajit_2021/
 
 # Python
 __pycache__/
@@ -7,15 +11,18 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+.cache/
 
 # User-provided eval data (see Data/README.md)
+Data/*
+!Data/README.md
+!Data/ConvertedTUSZEval/
 Data/ConvertedTUSZEval/**/*
 !Data/ConvertedTUSZEval/.gitkeep
 
-# New experiment outputs (demo runs under Results/ are tracked)
+# Experiment outputs (the registry experiments_results.csv is tracked)
 Results/**/*
 !Results/README.md
-!Results/Baseline/**
 
 # IDE / OS
 .idea/
