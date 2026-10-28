@@ -4,6 +4,27 @@ Despite strong predictive performance on held-out electroencephalography (EEG) s
 
 **Benchmarked models:** SeizureTransformer, EEGNet, EEGWaveNet and EventNet, on the held-out TUSZ eval split, Siena and CHB-MIT. A model is scored on a dataset only when that dataset is held out for it and in a compatible montage (`Data/README.md`). Results: `RESULTS.md`.
 
+## Benchmark at a glance
+
+One row per model × held-out dataset: clean full-eval performance, onset timing, MCD agreement, and robustness over the 36 shifts.
+
+| Model | Dataset | Se | PPV | F1 | FP/24h | Lead (s) | Lag (s) | Onset (s) | φ seizure / FP | Degraded | Worst ΔF1 (shift) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| SeizureTransformer | TUSZ | 0.57 | 0.69 | 0.62 | 16.7 | 109 | 30 | +1 | 0.15 / 0.76 | 12/36 | −0.56 (FGSM ↓, ε 0.05) |
+| EEGNet | TUSZ | 0.58 | 0.57 | 0.57 | 28.0 | 88 | 36 | +5 | 0.14 / 1.00 | 13/36 | −0.57 (FGSM ↓, ε 0.10) |
+| EEGWaveNet | TUSZ | 0.47 | 0.29 | 0.36 | 74.3 | 48 | 40 | +18 | – | 7/36 | −0.14 (FGSM ↓, ε 0.10) |
+| EventNet | TUSZ | 0.64 | 0.78 | 0.71 | 11.3 | 80 | 40 | −35 | – | 16/36 | −0.43 (FGSM ↓, ε 0.10) |
+| EEGNet | Siena | 0.66 | 0.42 | 0.51 | 7.3 | – | 25 | +25 | 0.25 / 0.95 | 21/36 | −0.47 (FGSM ↓, ε 0.05) |
+| EEGWaveNet | Siena | 0.77 | 0.04 | 0.08 | 139.6 | 110 | 35 | −10 | – | 3/36 | −0.02 (FGSM ↑, ε 0.10) |
+| EventNet | Siena | 0.55 | 0.39 | 0.46 | 7.0 | 20 | 12 | −15 | – | 10/36 | −0.39 (AWGN 0 dB) |
+| EEGNet | CHB-MIT | 0.76 | 0.05 | 0.09 | 73.8 | 71 | 18 | −2 | 0.55 / 0.99 | 7/36 | −0.09 (FGSM ↓, ε 0.10) |
+
+- **Se, PPV, F1, FP/24h:** SzCORE event scoring on the clean full evaluation set.
+- **Lead / Lag:** mean seconds before / after the annotated onset, among detected seizures that fired early / late. **Onset:** mean signed delay over all detected seizures (negative = early).
+- **φ seizure / FP:** Monte Carlo dropout agreement (5 passes, 10-subject subset) on seizure and on false-positive samples; "–" = model has no dropout. High φ on false positives means false alarms are confident.
+- **Degraded:** shifts whose paired subject-bootstrap 95% CI of ΔF1 is below zero with ΔF1 ≤ −0.02. **Worst ΔF1:** largest F1 drop vs clean; ↓ / ↑ = FGSM decrease / increase attack, ε relative to channel s.d.
+- Low clean F1 (EEGWaveNet on Siena, EEGNet on CHB-MIT) caps how much F1 can drop, so few degradations there is a floor effect, not robustness. Full tables: `RESULTS.md`.
+
 ## Quick start
 
 ```bash
